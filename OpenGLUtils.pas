@@ -1370,6 +1370,7 @@ begin
   glUseProgram(_Program);
 
   for i := 0 to High(_IntegerUniforms) do
+  if _IntegerUniforms[i].Info.Index >= 0 then
   case _IntegerUniforms[i].Info.Size of
     1: glUniform1iv(_IntegerUniforms[i].Info.Index, Length(_IntegerUniforms[i].Value), @_IntegerUniforms[i].Value[0]);
     2: glUniform2iv(_IntegerUniforms[i].Info.Index, Length(_IntegerUniforms[i].Value) div 2, @_IntegerUniforms[i].Value[0]);
@@ -1380,6 +1381,7 @@ begin
   end;
 
   for i := 0 to High(_FloatUniforms) do
+  if _FloatUniforms[i].Info.Index >= 0 then
   case _FloatUniforms[i].Info.Size of
     1: glUniform1fv(_FloatUniforms[i].Info.Index, Length(_FloatUniforms[i].Value), @_FloatUniforms[i].Value[0]);
     2: glUniform2fv(_FloatUniforms[i].Info.Index, Length(_FloatUniforms[i].Value) div 2, @_FloatUniforms[i].Value[0]);
@@ -1390,6 +1392,7 @@ begin
   end;
 
   for i := 0 to High(_MatrixUniforms) do
+  if _MatrixUniforms[i].MatrixInfo.Info.Index >= 0 then
   case _MatrixUniforms[i].MatrixInfo.Info.Size of
     2: glUniformMatrix2fv(_MatrixUniforms[i].MatrixInfo.Info.Index, _MatrixUniforms[i].MatrixInfo.Count, _MatrixUniforms[i].MatrixInfo.Transpose, @_MatrixUniforms[i].Value[0]);
     3: glUniformMatrix3fv(_MatrixUniforms[i].MatrixInfo.Info.Index, _MatrixUniforms[i].MatrixInfo.Count, _MatrixUniforms[i].MatrixInfo.Transpose, @_MatrixUniforms[i].Value[0]);

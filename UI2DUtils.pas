@@ -282,6 +282,7 @@ var Shader: TListRecord<PAnsiChar>;
     j, k, l: Integer;
     sorted: array of GLenum;
     tmp: GLenum;
+    resultUniforms: TLocalListRecord<TUniformBlockInfo>;
 begin
   SetLength(sorted, Length(Types));
   for i := 0 to High(Types) do
@@ -343,6 +344,15 @@ begin
         RaiseOpenGLError(0, s + #13#10 + Err);
       end;
 
+      resultUniforms.Initialize(Uniforms[0], Length(Uniforms), Length(Uniforms));
+      for i := High(Uniforms) downto 0 do begin
+        for j := 0 to i - 1 do
+          if Uniforms[j].Name = Uniforms[i].Name then begin
+            resultUniforms.Delete(i);
+            Break;
+          end;
+      end;
+      SetLength(Uniforms, resultUniforms.Count);
       SetLength(Result.Uniform, Length(Uniforms));
       SetLength(Result.MatrixExtension, mCount);
       mCount:= 0;
