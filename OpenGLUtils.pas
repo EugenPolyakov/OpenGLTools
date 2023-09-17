@@ -1642,7 +1642,7 @@ begin
   DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture GL_TEXTURE_MIN_FILTER [%d]', [LineHeight]));
   glTexImage2D({$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D, 0, {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_LUMINANCE8, TexWidth, TexHeight, 0,
     {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RED, {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE, TexData);
-  DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture glTexImage2D [%d]', [LineHeight]));
+  DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture glTexImage2D [%d] W:%d H:%d', [LineHeight, TexWidth, TexHeight]));
 end;
 
 procedure TBitmapFontBase.FreeContext;
