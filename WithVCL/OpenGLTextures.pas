@@ -6,18 +6,27 @@ uses System.SysUtils, WinApi.Windows, Vcl.Graphics, Vcl.Imaging.pngimage, Vcl.Im
   Vcl.Imaging.jpeg, OpenGL, OpenGLUtils;
 
 type
-  TScanLine = procedure (Y: Integer; Data: Pointer) of object;
+  TScanLine = procedure (AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
+
+  TTextureParameters = record
+    internalFormat: {$IFDEF OGL_USE_ENUMS}TInternalFormat{$ELSE}GLint{$ENDIF};
+    pixelFormat: {$IFDEF OGL_USE_ENUMS}TPixelFormat{$ELSE}GLenum{$ENDIF};
+    pixelType: {$IFDEF OGL_USE_ENUMS}TPixelType{$ELSE}GLenum{$ENDIF};
+    pixelSize: Integer;
+    scaner: TScanLine;
+  end;
+
   TTexture2D = record
   private
     FValue: TGraphic;
-    procedure Bitmap16ScanLine(Y: Integer; Data: Pointer);
-    procedure Bitmap24ScanLine(Y: Integer; Data: Pointer);
-    procedure Bitmap32ScanLine(Y: Integer; Data: Pointer);
-    procedure Png24ScanLine(Y: Integer; Data: Pointer);
-    procedure Png8ScanLine(Y: Integer; Data: Pointer);
-    procedure Bitmap24TransparentScanLine(Y: Integer; Data: Pointer);
-    procedure Bitmap32TransparentScanLine(Y: Integer; Data: Pointer);
-    procedure PngRGBAScanLine(Y: Integer; Data: Pointer);
+    class procedure Bitmap16ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Bitmap24ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Bitmap32ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Png24ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Png8ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Bitmap24TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure Bitmap32TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
+    class procedure PngRGBAScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
   public
     constructor CreateVCL(APicture: TPicture); overload;
     constructor CreateVCL(AGraphic: TGraphic); overload;
@@ -25,10 +34,8 @@ type
     class function IsSupported(AGraphic: TGraphic): Boolean; overload; static;
     function Generate(ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF}
         = {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D): TOGLTexture;
-    class procedure GenerateTexture(internalFormat: {$IFDEF OGL_USE_ENUMS}TInternalFormat{$ELSE}GLint{$ENDIF};
-        pixelFormat: {$IFDEF OGL_USE_ENUMS}TPixelFormat{$ELSE}GLenum{$ENDIF};
-        pixelType: {$IFDEF OGL_USE_ENUMS}TPixelType{$ELSE}GLenum{$ENDIF};
-        ScanLine: TScanLine; AWidth, AHeight, LineSize: Integer; ProcessByLine: Boolean;
+    class function GenerateParameters(AValue: TGraphic): TTextureParameters; static;
+    class procedure GenerateTexture(AGraphic: TGraphic; const AParams: TTextureParameters; AWidth, AHeight: Integer;
         ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF}= {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D); static;
   end;
 
@@ -56,24 +63,24 @@ begin
   CreateVCL(APicture.Graphic);
 end;
 
-procedure TTexture2D.Bitmap16ScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Bitmap16ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 begin
-  Move(TBitmap(FValue).ScanLine[Y]^, Data^, 2 * FValue.Width);
+  Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 2], Data^, 2 * Width);
 end;
 
-procedure TTexture2D.Bitmap24ScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Bitmap24ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 begin
-  Move(TBitmap(FValue).ScanLine[Y]^, Data^, 3 * FValue.Width);
+  Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
 end;
 
-procedure TTexture2D.Bitmap24TransparentScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Bitmap24TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: TColor;
     j: Integer;
 begin
-  Move(TBitmap(FValue).ScanLine[Y]^, Data^, 3 * FValue.Width);
-  alpha:= TBitmap(FValue).TransparentColor shl 8;
+  Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
+  alpha:= TBitmap(AGraphic).TransparentColor shl 8;
   SwapAny(alpha, 4);
-  for j := FValue.Width - 1 downto 0 do begin
+  for j := Width - 1 downto 0 do begin
     Move(Pointer(Integer(Data) + j * 3)^, Pointer(Integer(Data) + j * 4)^, 3);
     if CompareMem(Pointer(Integer(Data) + j * 4), @alpha, 3) then
       PByte(Integer(Data) + j * 4 + 3)^:= 0
@@ -82,19 +89,19 @@ begin
   end;
 end;
 
-procedure TTexture2D.Bitmap32ScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Bitmap32ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 begin
-  Move(TBitmap(FValue).ScanLine[Y]^, Data^, 4 * FValue.Width);
+  Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 4], Data^, 4 * Width);
 end;
 
-procedure TTexture2D.Bitmap32TransparentScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Bitmap32TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: TColor;
     j: Integer;
 begin
-  Move(TBitmap(FValue).ScanLine[Y]^, Data^, 4 * FValue.Width);
-  alpha:= TBitmap(FValue).TransparentColor shl 8;
+  Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 4], Data^, 4 * Width);
+  alpha:= TBitmap(AGraphic).TransparentColor shl 8;
   SwapAny(alpha, 4);
-  for j := 0 to FValue.Width - 1 do begin
+  for j := 0 to Width - 1 do begin
     if CompareMem(Pointer(Integer(Data) + j * 4), @alpha, 3) then
       PByte(Integer(Data) + j * 4 + 3)^:= 0
     else
@@ -113,104 +120,14 @@ begin
 end;
 
 function TTexture2D.Generate(ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF}): TOGLTexture;
-var internalFormat: {$IFDEF OGL_USE_ENUMS}TInternalFormat{$ELSE}GLint{$ENDIF};
-    pixelFormat: {$IFDEF OGL_USE_ENUMS}TPixelFormat{$ELSE}GLenum{$ENDIF};
-    pixelType: {$IFDEF OGL_USE_ENUMS}TPixelType{$ELSE}GLenum{$ENDIF};
-    ProcessByLine: Boolean;
-    lineSize: Integer;
-    scaner: TScanLine;
+var params: TTextureParameters;
 begin
   glGenTextures(1, @Result.Texture);
   Result.Target:= ATarget;
   Result.Enable;
   Result.Bind;
-  if FValue is TBitmap then begin
-    ProcessByLine:= TBitmap(FValue).IsVerticalReverse or TBitmap(FValue).Transparent;
-    case TBitmap(FValue).PixelFormat of
-      pf24bit: begin
-        if TBitmap(FValue).Transparent then begin
-          internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA;
-          pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
-          lineSize:= 4 * FValue.Width;
-          scaner:= Bitmap24TransparentScanLine;
-        end else begin
-          internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
-          pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGR;
-          lineSize:= 3 * FValue.Width;
-          scaner:= Bitmap24ScanLine;
-        end;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-      end;
-      pf32bit: begin
-        if (TBitmap(FValue).AlphaFormat = afDefined) or TBitmap(FValue).Transparent then
-          internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA
-        else
-          internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
-        lineSize:= 4 * FValue.Width;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-        if TBitmap(FValue).Transparent then
-          scaner:= Bitmap32TransparentScanLine
-        else
-          scaner:= Bitmap32ScanLine;
-      end;
-      pf15bit: begin
-        internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RGB;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_1_5_5_5_REV;
-        lineSize:= 2 * FValue.Width;
-        scaner:= Bitmap16ScanLine;
-        if TBitmap(FValue).Transparent then
-          raise Exception.Create('Unsupported pixel format 15Transparent');
-      end;
-      pf16bit: begin
-        internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RGB;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_5_6_5;
-        lineSize:= 2 * FValue.Width;
-        scaner:= Bitmap16ScanLine;
-        if TBitmap(FValue).Transparent then
-          raise Exception.Create('Unsupported pixel format 16Transparent');
-      end;
-      {pfDevice,
-      pf1bit,
-      pf4bit,
-      pf8bit,
-      pfCustom}
-    else
-      raise Exception.Create('Unsupported pixel format');
-    end;
-  end else if FValue is TPngImage then begin
-    ProcessByLine:= True;
-    case TPngImage(FValue).Header.ColorType of
-      COLOR_RGB: begin
-        internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGR;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-        lineSize:= 3 * FValue.Width;
-        scaner:= Png24ScanLine;
-      end;
-      COLOR_GRAYSCALE: begin
-        internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RED;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RED;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-        lineSize:= FValue.Width;
-        scaner:= Png8ScanLine;
-      end;
-      COLOR_RGBALPHA: begin
-        internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA;
-        pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
-        pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-        lineSize:= 4 * FValue.Width;
-        scaner:= PngRGBAScanLine;
-      end;
-      //COLOR_PALETTE;
-      //COLOR_GRAYSCALEALPHA = 4;
-    else
-      raise Exception.Create('Unsupported pixel format');
-    end;
-  end else
-    raise Exception.Create('Unsupported image format');
+
+  params:= GenerateParameters(FValue);
 
   if ATarget <> {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D then begin
     glTexParameteri(ATarget, {$IFDEF OGL_USE_ENUMS}TTextureParameterName.{$ENDIF}GL_TEXTURE_BASE_LEVEL, 0);
@@ -227,24 +144,109 @@ begin
 
   glTexParameteri(ATarget, {$IFDEF OGL_USE_ENUMS}TTextureParameterName.{$ENDIF}GL_TEXTURE_MAG_FILTER, GLint({$IFDEF OGL_USE_ENUMS}TTextureMagFilter.{$ENDIF}GL_LINEAR));
 
-  GenerateTexture(internalFormat, pixelFormat, pixelType, scaner,
-      FValue.Width, FValue.Height, lineSize, ProcessByLine,
-      ATarget);
+  GenerateTexture(FValue, params, FValue.Width, FValue.Height, ATarget);
 end;
 
-class procedure TTexture2D.GenerateTexture(internalFormat: {$IFDEF OGL_USE_ENUMS}TInternalFormat{$ELSE}GLint{$ENDIF};
-  pixelFormat: {$IFDEF OGL_USE_ENUMS}TPixelFormat{$ELSE}GLenum{$ENDIF};
-  pixelType: {$IFDEF OGL_USE_ENUMS}TPixelType{$ELSE}GLenum{$ENDIF}; ScanLine: TScanLine; AWidth, AHeight, LineSize: Integer;
-  ProcessByLine: Boolean; ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF});
+class function TTexture2D.GenerateParameters(AValue: TGraphic): TTextureParameters;
+begin
+  if AValue is TBitmap then begin
+    case TBitmap(AValue).PixelFormat of
+      pf24bit: begin
+        if TBitmap(AValue).Transparent then begin
+          Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA;
+          Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
+          Result.pixelSize:= 4;
+          Result.scaner:= Bitmap24TransparentScanLine;
+        end else begin
+          Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
+          Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGR;
+          Result.pixelSize:= 3;
+          Result.scaner:= Bitmap24ScanLine;
+        end;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
+      end;
+      pf32bit: begin
+        if (TBitmap(AValue).AlphaFormat = afDefined) or TBitmap(AValue).Transparent then
+          Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA
+        else
+          Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
+        Result.pixelSize:= 4;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
+        if TBitmap(AValue).Transparent then
+          Result.scaner:= Bitmap32TransparentScanLine
+        else
+          Result.scaner:= Bitmap32ScanLine;
+      end;
+      pf15bit: begin
+        Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RGB;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_1_5_5_5_REV;
+        Result.pixelSize:= 2;
+        Result.scaner:= Bitmap16ScanLine;
+        if TBitmap(AValue).Transparent then
+          raise Exception.Create('Unsupported pixel format 15Transparent');
+      end;
+      pf16bit: begin
+        Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RGB;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_5_6_5;
+        Result.pixelSize:= 2;
+        Result.scaner:= Bitmap16ScanLine;
+        if TBitmap(AValue).Transparent then
+          raise Exception.Create('Unsupported pixel format 16Transparent');
+      end;
+      {pfDevice,
+      pf1bit,
+      pf4bit,
+      pf8bit,
+      pfCustom}
+    else
+      raise Exception.Create('Unsupported pixel format');
+    end;
+  end else if AValue is TPngImage then begin
+    case TPngImage(AValue).Header.ColorType of
+      COLOR_RGB: begin
+        Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGR;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
+        Result.pixelSize:= 3;
+        Result.scaner:= Png24ScanLine;
+      end;
+      COLOR_GRAYSCALE: begin
+        Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RED;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RED;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
+        Result.pixelSize:= 1;
+        Result.scaner:= Png8ScanLine;
+      end;
+      COLOR_RGBALPHA: begin
+        Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA;
+        Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
+        Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
+        Result.pixelSize:= 4;
+        Result.scaner:= PngRGBAScanLine;
+      end;
+      //COLOR_PALETTE;
+      //COLOR_GRAYSCALEALPHA = 4;
+    else
+      raise Exception.Create('Unsupported pixel format');
+    end;
+  end else
+    raise Exception.Create('Unsupported image format');
+end;
+
+class procedure TTexture2D.GenerateTexture(AGraphic: TGraphic; const AParams: TTextureParameters; AWidth, AHeight: Integer;
+  ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF});
 var i: Integer;
     full: array of Byte;
 begin
   glPixelStorei({$IFDEF OGL_USE_ENUMS}TPixelStoreParameter.{$ENDIF}GL_UNPACK_ALIGNMENT, 1);
-  SetLength(full, LineSize * AHeight);
+  SetLength(full, AParams.pixelSize * AWidth * AHeight);
   for i := 0 to AHeight - 1 do
-    ScanLine(i, @full[LineSize * i]);
-  glTexImage2D(ATarget, 0, internalFormat, AWidth, AHeight, 0,
-    pixelFormat, pixelType, @full[0]);
+    AParams.scaner(AGraphic, i, 0, AWidth, @full[AParams.pixelSize * i * AWidth]);
+  glTexImage2D(ATarget, 0, AParams.internalFormat, AWidth, AHeight, 0,
+    AParams.pixelFormat, AParams.pixelType, @full[0]);
 end;
 
 class function TTexture2D.IsSupported(APicture: TPicture): Boolean;
@@ -274,24 +276,24 @@ begin
     Result:= False;
 end;
 
-procedure TTexture2D.Png24ScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Png24ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 begin
-  Move(TPngImage(FValue).ScanLine[Y]^, Data^, 3 * FValue.Width);
+  Move(PAnsiChar(TPngImage(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
 end;
 
-procedure TTexture2D.Png8ScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.Png8ScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 begin
-  Move(TPngImage(FValue).ScanLine[Y]^, Data^, FValue.Width);
+  Move(PAnsiChar(TPngImage(AGraphic).ScanLine[Y])[Offset], Data^, Width);
 end;
 
-procedure TTexture2D.PngRGBAScanLine(Y: Integer; Data: Pointer);
+class procedure TTexture2D.PngRGBAScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: pByteArray;
     j: Integer;
 begin
-  Move(TPngImage(FValue).ScanLine[Y]^, Data^, 3 * FValue.Width);
-  alpha:= TPngImage(FValue).AlphaScanline[Y];
-  for j := FValue.Width - 1 downto 0 do begin
-    PByte(Integer(Data) + j * 4 + 3)^:= alpha[j];
+  Move(PAnsiChar(TPngImage(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
+  alpha:= TPngImage(AGraphic).AlphaScanline[Y];
+  for j := Width - 1 downto 0 do begin
+    PByte(Integer(Data) + j * 4 + 3)^:= alpha[j + Offset];
     Move(PByte(Integer(Data) + j * 3)^, PByte(Integer(Data) + j * 4)^, 3);
   end;
 end;

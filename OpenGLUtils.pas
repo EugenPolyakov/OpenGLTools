@@ -325,6 +325,7 @@ type
     FNeededLayers: TLockFreeStack<LongWord>;
     FShouldToggle: Boolean;
     FDefaultChar: UCS4Char;
+    FMaxTextureSize: Integer;
   strict protected
     FTextures: TTexturesInfo;
     procedure GenerateTexture;
@@ -342,6 +343,7 @@ type
   public
     function IsSameFornt(const AFont: TFontData): Boolean;
     property Height: Integer read FHeight;
+    property MaxTextureSize: Integer read FMaxTextureSize;
     function TextureSymbolHeight: GLfloat;
     property LineHeight: Integer read FLineHeight;
     property DefaultChar: UCS4Char read FDefaultChar;
@@ -349,7 +351,7 @@ type
     function GetTextInfo(const AText: string; out AInfo: TTextInfo): Boolean; overload;
     function GetTextSize(const AText: string; MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): TPoint;
     procedure FreeContext; virtual;
-    constructor Create(const AFont: TFontData; const ADefaultCharAndStartLayers: string = #$FFFD);
+    constructor Create(const AFont: TFontData; AMaxTextureSize: Integer; const ADefaultCharAndStartLayers: string = #$FFFD);
     destructor Destroy; override;
   end;
 
@@ -405,7 +407,7 @@ type
     function PrepareTextRect(const AText: string; const ABoundRect: TRect; const AOffset: TPoint; out APrepared: TBorderedText; AColor: TColor; AScale: GLfloat = 1.0; AWordWrap: Boolean = False):Boolean;
     procedure UpdateTextOffset(var APrepared: TBorderedText; const AOffset: TPoint; AColor: TColor; AOpasity: GLfloat = 1.0; AScale: GLfloat = 1.0);
     procedure GenerateTextDIP(const Prepared: TPreparedText; var DIP: TDIP; AOffset: TPoint; AColor: TColor; AOpasity: GLfloat = 1.0; AScale: GLfloat = 1);
-    constructor Create(const AFontName: string; AHeight: Integer; const ADefaultCharAndStartLayers: string = #$FFFD); overload;
+    constructor Create(const AFontName: string; AHeight, AMaxTextureSize: Integer; const ADefaultCharAndStartLayers: string = #$FFFD); overload;
     class procedure InitializeProgram;
   end;
 
@@ -926,11 +928,11 @@ end;
 
 { TBitmapFont }
 
-constructor TBitmapFont.Create(const AFontName: string; AHeight: Integer; const ADefaultCharAndStartLayers: string);
+constructor TBitmapFont.Create(const AFontName: string; AHeight, AMaxTextureSize: Integer; const ADefaultCharAndStartLayers: string);
 var f: TFontData;
 begin
   f.Create(AFontName, AHeight, [], TFontQuality.fqClearType);
-  Create(f, ADefaultCharAndStartLayers);
+  Create(f, AMaxTextureSize, ADefaultCharAndStartLayers);
 end;
 
 procedure TBitmapFont.GenerateTextDIP(const Prepared: TPreparedText;
@@ -1576,13 +1578,14 @@ begin
   FNeededLayers.Push(ALayer);
 end;
 
-constructor TBitmapFontBase.Create(const AFont: TFontData;
+constructor TBitmapFontBase.Create(const AFont: TFontData; AMaxTextureSize: Integer;
   const ADefaultCharAndStartLayers: string);
 var p: PWideChar;
     u: UCS4Char;
     last: LongWord;
     //m: TOutlineTextmetricW;
 begin
+  FMaxTextureSize:= AMaxTextureSize;
   FFont.Create(AFont);
   FFont.Color:= $FFFFFF;
   if ADefaultCharAndStartLayers = '' then
@@ -2128,7 +2131,7 @@ begin
         RaiseLastOSError(GetLastError, ' TBitmapFontBase.Initialize GetOutlineTextMetrics');
       FHeight:= m.otmTextMetrics.tmHeight;
       FLineHeight:= FHeight + m.otmTextMetrics.tmExternalLeading;
-      buf.TexWidth:= 1 shl (GetMaxIndexOfSetBit(FHeight * 16) + 1);
+      buf.TexWidth:= FMaxTextureSize;
       buf.TexHeight:= 1 shl (GetMaxIndexOfSetBit(FHeight * 4) + 1);
       FBMP.SetBound(buf.TexWidth, buf.TexHeight);
     finally
