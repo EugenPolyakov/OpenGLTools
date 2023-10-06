@@ -317,7 +317,7 @@ type
   TBitmapFontBase = class
   strict private
     FCurrentCharData: PBitmapFontData;
-    FCharBuffers: array [0..1] of TBitmapFontData;
+    FCharBuffers: array [Boolean] of TBitmapFontData;
     FBMP: TBitmapGDI;
     FFont: TFontData;
     FHeight, FLineHeight: Integer;
@@ -334,7 +334,7 @@ type
     procedure Initialize(Sender: TObject);
     procedure ActualizeState;
     procedure ReadyToToggle; virtual;
-    function GetCharInfo(AChar: UCS4Char): PBitmapCharBlock; //inline;
+    function GetCharInfo(AChar: UCS4Char): PBitmapCharBlock; inline;
     //в этих функциях нет проверок
     function GetTextInfo(const AText: string; out AInfo: TTextInfo; DefaultWidth, SpaceWidth, MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): Boolean; overload;
     function GetTextInfoByIndex(const AText: string; out AInfo: TTextInfo; DefaultWidth, SpaceWidth, MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): Boolean; overload;
@@ -437,8 +437,8 @@ procedure GetShaderLog(Shader: GLuint; out Result: AnsiString); overload;
 function GetProgramLog(_Program: GLuint): string; overload;
 procedure GetProgramLog(_Program: GLuint; out Result: AnsiString); overload;
 procedure LogOutput(AClass: TClass; const AFunctionName, AMessage: string);
-procedure LogOutputAllErrors(AClass: TClass; const AFunctionName: string);
-procedure DebugLogOutputAllErrors(AClass: TClass; const AFunctionName: string); inline;
+function LogOutputAllErrors(AClass: TClass; const AFunctionName: string): Boolean;
+function DebugLogOutputAllErrors(AClass: TClass; const AFunctionName: string): Boolean; inline;
 procedure SetViewPortSize(Width, Height: GLint);
 
 function SetLogFunction(ALogFunction: TOGLLogFunction; ASelf: Pointer): TOGLLogFunctionObj; overload;
@@ -542,18 +542,21 @@ begin
     LogOut(AClass, AFunctionName, AMessage);
 end;
 
-procedure DebugLogOutputAllErrors(AClass: TClass; const AFunctionName: string);
+function DebugLogOutputAllErrors(AClass: TClass; const AFunctionName: string): Boolean;
 begin
   {$IFDEF DEBUG}
-  LogOutputAllErrors(AClass, AFunctionName);
+  Result:= LogOutputAllErrors(AClass, AFunctionName);
+  {$ELSE}
+  Result:= False;
   {$ENDIF}
 end;
 
-procedure LogOutputAllErrors(AClass: TClass; const AFunctionName: string);
+function LogOutputAllErrors(AClass: TClass; const AFunctionName: string): Boolean;
 var err: GLenum;
 begin
+  err:= glGetError;
+  Result:= err <> GL_NO_ERROR;
   if Assigned(LogOut) then begin
-    err:= glGetError;
     while err <> GL_NO_ERROR do begin
       LogOut(AClass, AFunctionName, Format('OpenGL Error: %d', [err]));
       err:= glGetError;
@@ -1528,14 +1531,15 @@ end;
 { TBitmapFontBase }
 
 procedure TBitmapFontBase.ActualizeState;
-var newBuf, len: Integer;
+var newBuf: Boolean;
+    len: Integer;
 begin
   DebugLogOutputAllErrors(TBitmapFont, Format('ActualizeState before [%d]', [LineHeight]));
   if FShouldToggle then begin
     FShouldToggle:= False;
-    newBuf:= Integer(FCurrentCharData = @FCharBuffers[0]);
-    if (FCharBuffers[0].TexWidth <> FCharBuffers[1].TexWidth) or
-      (FCharBuffers[0].TexHeight <> FCharBuffers[1].TexHeight) then begin
+    newBuf:= FCurrentCharData = @FCharBuffers[False];
+    if (FCharBuffers[False].TexWidth <> FCharBuffers[True].TexWidth) or
+      (FCharBuffers[False].TexHeight <> FCharBuffers[True].TexHeight) then begin
 
       if FTextures._Textures = nil then
         ///  создать новую текстуру, если ещё не создана
@@ -1608,7 +1612,7 @@ begin
       FNeededLayers.Push(last);
     end;
   end;
-  FCurrentCharData:= @FCharBuffers[0];
+  FCurrentCharData:= @FCharBuffers[False];
 
   if (FRenderTask = nil) and not FNeededLayers.IsEmpty then
     FRenderTask:= TTask.Run(Self, Initialize);
@@ -1622,13 +1626,16 @@ begin
   if task <> nil then
     task.Wait();
   FFont.Destroy;
-  FCharBuffers[0].Clear;
-  FCharBuffers[1].Clear;
+  FCharBuffers[False].Clear;
+  FCharBuffers[True].Clear;
   FBMP.Destroy;
   inherited;
 end;
 
 procedure TBitmapFontBase.FillTexture(TexWidth, TexHeight: Integer; TexData: Pointer);
+var b: PBitmapFontData;
+  i: Integer;
+  s: string;
 begin
   glPixelStorei({$IFDEF OGL_USE_ENUMS}TPixelStoreParameter.{$ENDIF}GL_UNPACK_ALIGNMENT, 1);
   DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture GL_UNPACK_ALIGNMENT [%d]', [LineHeight]));
@@ -1645,7 +1652,17 @@ begin
   DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture GL_TEXTURE_MIN_FILTER [%d]', [LineHeight]));
   glTexImage2D({$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D, 0, {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_LUMINANCE8, TexWidth, TexHeight, 0,
     {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_RED, {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE, TexData);
-  DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture glTexImage2D [%d] W:%d H:%d', [LineHeight, TexWidth, TexHeight]));
+  if DebugLogOutputAllErrors(TBitmapFontBase, Format('FillTexture glTexImage2D [%d] W:%d H:%d',
+      [LineHeight, TexWidth, TexHeight])) and Assigned(LogOut) then begin
+    b:= @FCharBuffers[@FCharBuffers[False] = FCurrentCharData];
+    s:= '';
+    for i := 0 to $10FF do
+      if b.CharTable[i] <> nil then
+        s:= s + ', ' + IntToStr(i);
+    if s <> '' then
+      Delete(s, 1, 2);
+    LogOut(TBitmapFontBase, 'FillTexture', 'Filled char pages: ' + s);
+  end;
 end;
 
 procedure TBitmapFontBase.FreeContext;
@@ -2103,10 +2120,7 @@ var
   j, k, fix: Integer;
   m: TOutlineTextmetricW;
 begin
-  if FCurrentCharData = @FCharBuffers[0] then
-    buf:= @FCharBuffers[1]
-  else
-    buf:= @FCharBuffers[0];
+  buf:= @FCharBuffers[FCurrentCharData = @FCharBuffers[False]];
 
   buf.Clear;
   if FCurrentCharData <> nil then begin
