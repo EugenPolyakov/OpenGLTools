@@ -28,13 +28,14 @@ type
     class procedure Bitmap32TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
     class procedure PngRGBAScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer); static;
   public
+    property Graphic: TGraphic read FValue;
     constructor CreateVCL(APicture: TPicture); overload;
     constructor CreateVCL(AGraphic: TGraphic); overload;
     class function IsSupported(APicture: TPicture): Boolean; overload; static;
     class function IsSupported(AGraphic: TGraphic): Boolean; overload; static;
     function Generate(ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF}
         = {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D): TOGLTexture;
-    class function GenerateParameters(AValue: TGraphic): TTextureParameters; static;
+    function GenerateParameters: TTextureParameters;
     class procedure GenerateTexture(AGraphic: TGraphic; const AParams: TTextureParameters; AWidth, AHeight: Integer;
         ATarget: {$IFDEF OGL_USE_ENUMS}TTextureTarget{$ELSE}GLenum{$ENDIF}= {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D); static;
   end;
@@ -127,7 +128,7 @@ begin
   Result.Enable;
   Result.Bind;
 
-  params:= GenerateParameters(FValue);
+  params:= GenerateParameters;
 
   if ATarget <> {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D then begin
     glTexParameteri(ATarget, {$IFDEF OGL_USE_ENUMS}TTextureParameterName.{$ENDIF}GL_TEXTURE_BASE_LEVEL, 0);
@@ -147,12 +148,12 @@ begin
   GenerateTexture(FValue, params, FValue.Width, FValue.Height, ATarget);
 end;
 
-class function TTexture2D.GenerateParameters(AValue: TGraphic): TTextureParameters;
+function TTexture2D.GenerateParameters: TTextureParameters;
 begin
-  if AValue is TBitmap then begin
-    case TBitmap(AValue).PixelFormat of
+  if FValue is TBitmap then begin
+    case TBitmap(FValue).PixelFormat of
       pf24bit: begin
-        if TBitmap(AValue).Transparent then begin
+        if TBitmap(FValue).Transparent then begin
           Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA;
           Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
           Result.pixelSize:= 4;
@@ -166,14 +167,14 @@ begin
         Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
       end;
       pf32bit: begin
-        if (TBitmap(AValue).AlphaFormat = afDefined) or TBitmap(AValue).Transparent then
+        if (TBitmap(FValue).AlphaFormat = afDefined) or TBitmap(FValue).Transparent then
           Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGBA
         else
           Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
         Result.pixelSize:= 4;
         Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGRA;
         Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_BYTE;
-        if TBitmap(AValue).Transparent then
+        if TBitmap(FValue).Transparent then
           Result.scaner:= Bitmap32TransparentScanLine
         else
           Result.scaner:= Bitmap32ScanLine;
@@ -184,7 +185,7 @@ begin
         Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_1_5_5_5_REV;
         Result.pixelSize:= 2;
         Result.scaner:= Bitmap16ScanLine;
-        if TBitmap(AValue).Transparent then
+        if TBitmap(FValue).Transparent then
           raise Exception.Create('Unsupported pixel format 15Transparent');
       end;
       pf16bit: begin
@@ -193,7 +194,7 @@ begin
         Result.pixelType:= {$IFDEF OGL_USE_ENUMS}TPixelType.{$ENDIF}GL_UNSIGNED_SHORT_5_6_5;
         Result.pixelSize:= 2;
         Result.scaner:= Bitmap16ScanLine;
-        if TBitmap(AValue).Transparent then
+        if TBitmap(FValue).Transparent then
           raise Exception.Create('Unsupported pixel format 16Transparent');
       end;
       {pfDevice,
@@ -204,8 +205,8 @@ begin
     else
       raise Exception.Create('Unsupported pixel format');
     end;
-  end else if AValue is TPngImage then begin
-    case TPngImage(AValue).Header.ColorType of
+  end else if FValue is TPngImage then begin
+    case TPngImage(FValue).Header.ColorType of
       COLOR_RGB: begin
         Result.internalFormat:= {$IFDEF OGL_USE_ENUMS}TInternalFormat.{$ENDIF}GL_RGB;
         Result.pixelFormat:= {$IFDEF OGL_USE_ENUMS}TPixelFormat.{$ENDIF}GL_BGR;
