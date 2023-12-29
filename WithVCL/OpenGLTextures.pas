@@ -77,16 +77,17 @@ end;
 class procedure TTexture2D.Bitmap24TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: TColor;
     j: Integer;
+    Bytes: PByte absolute Data;
 begin
   Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
   alpha:= TBitmap(AGraphic).TransparentColor shl 8;
   SwapAny(alpha, 4);
   for j := Width - 1 downto 0 do begin
-    Move(Pointer(Integer(Data) + j * 3)^, Pointer(Integer(Data) + j * 4)^, 3);
-    if CompareMem(Pointer(Integer(Data) + j * 4), @alpha, 3) then
-      PByte(Integer(Data) + j * 4 + 3)^:= 0
+    Move(Bytes[j * 3], Bytes[j * 4], 3);
+    if CompareMem(Pointer(NativeUInt(Data) + j * 4), @alpha, 3) then
+      Bytes[j * 4 + 3]:= 0
     else
-      PByte(Integer(Data) + j * 4 + 3)^:= $FF;
+      Bytes[j * 4 + 3]:= $FF;
   end;
 end;
 
@@ -98,15 +99,16 @@ end;
 class procedure TTexture2D.Bitmap32TransparentScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: TColor;
     j: Integer;
+    Bytes: PByte absolute Data;
 begin
   Move(PAnsiChar(TBitmap(AGraphic).ScanLine[Y])[Offset * 4], Data^, 4 * Width);
   alpha:= TBitmap(AGraphic).TransparentColor shl 8;
   SwapAny(alpha, 4);
   for j := 0 to Width - 1 do begin
-    if CompareMem(Pointer(Integer(Data) + j * 4), @alpha, 3) then
-      PByte(Integer(Data) + j * 4 + 3)^:= 0
+    if CompareMem(@Bytes[j * 4], @alpha, 3) then
+      Bytes[j * 4 + 3]:= 0
     else
-      PByte(Integer(Data) + j * 4 + 3)^:= $FF;
+      Bytes[j * 4 + 3]:= $FF;
   end;
 end;
 
@@ -290,12 +292,13 @@ end;
 class procedure TTexture2D.PngRGBAScanLine(AGraphic: TGraphic; Y, Offset, Width: Integer; Data: Pointer);
 var alpha: pByteArray;
     j: Integer;
+    Bytes: PByte absolute Data;
 begin
   Move(PAnsiChar(TPngImage(AGraphic).ScanLine[Y])[Offset * 3], Data^, 3 * Width);
   alpha:= TPngImage(AGraphic).AlphaScanline[Y];
   for j := Width - 1 downto 0 do begin
-    PByte(Integer(Data) + j * 4 + 3)^:= alpha[j + Offset];
-    Move(PByte(Integer(Data) + j * 3)^, PByte(Integer(Data) + j * 4)^, 3);
+    Bytes[j * 4 + 3]:= alpha[j + Offset];
+    Move(Bytes[j * 3], Bytes[j * 4], 3);
   end;
 end;
 
