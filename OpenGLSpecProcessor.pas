@@ -6,7 +6,7 @@ uses System.SysUtils, System.StrUtils, System.Classes, System.Generics.Collectio
   SysTypes, StreamExtensions, RecordUtils;
 
 type
-  TCommandUsing = (cuNone, cuStatic, cuDinamic);
+  TCommandUsing = (cuNone, cuStatic, cuDynamic);
   PCommandUsing = ^TCommandUsing;
 
   TEnum = record
@@ -1939,19 +1939,19 @@ var i, j, k, l: Integer;
 begin
   for k := 0 to High(LoadedData) do
     for l := 0 to High(LoadedData[k].Extensions) do
-      if AOptions.Selection[k][l] = cuDinamic then begin
+      if AOptions.Selection[k][l] = cuDynamic then begin
         txt:= '    ' + LoadedData[k].Extensions[l].Name;
         OutStream.Write(Pointer(txt)^, Length(txt));
 
         for j := l + 1 to High(LoadedData[k].Extensions) do
-          if AOptions.Selection[k][j] = cuDinamic then begin
+          if AOptions.Selection[k][j] = cuDynamic then begin
             txt:= ',' + sLineBreak + '    ' + LoadedData[k].Extensions[j].Name;
             OutStream.Write(Pointer(txt)^, Length(txt));
           end;
 
         for i := k + 1 to High(LoadedData) do
           for j := 0 to High(LoadedData[i].Extensions) do
-            if AOptions.Selection[i][j] = cuDinamic then begin
+            if AOptions.Selection[i][j] = cuDynamic then begin
               txt:= ',' + sLineBreak + '    ' + LoadedData[i].Extensions[j].Name;
               OutStream.Write(Pointer(txt)^, Length(txt));
             end;
@@ -2246,7 +2246,7 @@ var i, j: Integer;
 begin
   for i := 0 to High(LoadedData) do
     for j := 0 to High(LoadedData[i].Extensions) do
-      if AOptions.Selection[i][j] = cuDinamic then
+      if AOptions.Selection[i][j] = cuDynamic then
         Exit(True);
   Result:= False;
 end;
@@ -2337,7 +2337,7 @@ begin
       end;
 
       for j := 0 to High(LoadedData[i].Commands) do
-      if Prepared.neededCommands[Prepared.commandsOffset + j].CommandUsing = cuDinamic then begin
+      if Prepared.neededCommands[Prepared.commandsOffset + j].CommandUsing = cuDynamic then begin
         need:= IsCanWithDelphiTypes(LoadedData[i].Commands[j]);
         if AOptions.GenerateDefaultCFunctions or not need then begin
           txt:= '  T' + LoadedData[i].Commands[j].Name.Name + 'Proc = ';
@@ -2403,7 +2403,7 @@ begin
       for i := 0 to High(LoadedData) do begin
         Prepared.CurrentData:= i;
         for j := 0 to High(LoadedData[i].Commands) do
-          if Prepared.neededCommands[Prepared.commandsOffset + j].CommandUsing = cuDinamic then begin
+          if Prepared.neededCommands[Prepared.commandsOffset + j].CommandUsing = cuDynamic then begin
             need:= IsCanWithDelphiTypes(LoadedData[i].Commands[j]);
             if AOptions.GenerateDefaultCFunctions or not need then begin
               txt:= '  ' + LoadedData[i].Commands[j].Name.Name + ': T' + LoadedData[i].Commands[j].Name.Name + 'Proc;' + sLineBreak;
@@ -2425,7 +2425,7 @@ begin
 
       for i := 0 to High(LoadedData) do
         for j := 0 to High(LoadedData[i].Extensions) do
-          if AOptions.Selection[i][j] = cuDinamic then begin
+          if AOptions.Selection[i][j] = cuDynamic then begin
             txt:= 'function Initialize' + LoadedData[i].Extensions[j].Name + '(ExtensionString: PAnsiChar = nil): TExtensionInitialization;' + sLineBreak;
             OutStream.Write(Pointer(txt)^, Length(txt));
           end;
@@ -2549,7 +2549,7 @@ begin
       OutStream.Write(Pointer(txt)^, Length(txt));
       for i := 0 to High(LoadedData) do
         for j := 0 to High(LoadedData[i].Extensions) do
-          if AOptions.Selection[i][j] = cuDinamic then begin
+          if AOptions.Selection[i][j] = cuDynamic then begin
             txt:= '  Initialize' + LoadedData[i].Extensions[j].Name + '(s);' + sLineBreak;
             OutStream.Write(Pointer(txt)^, Length(txt));
           end;
@@ -2559,14 +2559,14 @@ begin
       Prepared.ResetOffset;
       for i := 0 to High(LoadedData) do begin
         Prepared.CurrentData:= i;
-        for j := 0 to High(LoadedData[i].Extensions) do if AOptions.Selection[i][j] = cuDinamic then begin
+        for j := 0 to High(LoadedData[i].Extensions) do if AOptions.Selection[i][j] = cuDynamic then begin
           txt:= 'function Initialize' + LoadedData[i].Extensions[j].Name + '(ExtensionString: PAnsiChar): TExtensionInitialization;' + sLineBreak +
             'begin' + sLineBreak;
           OutStream.Write(Pointer(txt)^, Length(txt));
           for k := 0 to High(LoadedData[i].Extensions[j].Require) do
             for l := 0 to High(LoadedData[i].Extensions[j].Require[k].Commands) do begin
               index:= LoadedData[i].IndexOfCommand(LoadedData[i].Extensions[j].Require[k].Commands[l]);
-              if (index <> -1) and (Prepared.neededCommands[Prepared.commandsOffset + index].CommandUsing = cuDinamic) then begin
+              if (index <> -1) and (Prepared.neededCommands[Prepared.commandsOffset + index].CommandUsing = cuDynamic) then begin
                 txt:= '  ' + LoadedData[i].Extensions[j].Require[k].Commands[l] +
                     ':= wglGetProcAddress(''' + LoadedData[i].Extensions[j].Require[k].Commands[l] +
                     ''');' + sLineBreak;
@@ -2585,7 +2585,7 @@ begin
           for k := 0 to High(LoadedData[i].Extensions[j].Require) do begin
             for l := 0 to High(LoadedData[i].Extensions[j].Require[k].Commands) do begin
               index:= LoadedData[i].IndexOfCommand(LoadedData[i].Extensions[j].Require[k].Commands[l]);
-              if (index <> -1) and (Prepared.neededCommands[Prepared.commandsOffset + index].CommandUsing = cuDinamic) then begin
+              if (index <> -1) and (Prepared.neededCommands[Prepared.commandsOffset + index].CommandUsing = cuDynamic) then begin
                 txt:= sLineBreak + '      Assigned(' + LoadedData[i].Extensions[j].Require[k].Commands[l] +
                     ') and ';
                 OutStream.Write(Pointer(txt)^, Length(txt));
