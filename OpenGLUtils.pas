@@ -34,8 +34,8 @@ type
     PS: TPaintStruct;
     PF: TPixelFormatDescriptor;
     procedure DeleteContext(Throw: Boolean = False);
-    function CreateOpenGLContext(DC: HDC; MajorVersion, MinorVersion, Flags, ProfileMask: LongWord; Throw: Boolean = True): Integer; overload;
-    function CreateOpenGLContext(DC: HDC; Throw: Boolean = True): Integer; overload;
+    procedure CreateOpenGLContext(DC: HDC; MajorVersion, MinorVersion, Flags, ProfileMask: LongWord; Throw: Boolean = True); overload;
+    procedure CreateOpenGLContext(DC: HDC; Throw: Boolean = True); overload;
     procedure MakeCurrent(DC: HDC; Throw: Boolean = True);
   end;
 
@@ -337,9 +337,10 @@ type
     function GetCharInfo(AChar: UCS4Char): PBitmapCharBlock; inline;
     //в этих функциях нет проверок
     function GetTextInfo(const AText: string; out AInfo: TTextInfo; DefaultWidth, SpaceWidth, MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): Boolean; overload;
+    //не пропускаем невидимые символы
     function GetTextInfoByIndex(const AText: string; out AInfo: TTextInfo; DefaultWidth, SpaceWidth, MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): Boolean; overload;
-    function GetTextInfo(const AText: string; out AInfo: TTextInfo; DefaultWidth, SpaceWidth: Integer): Boolean; overload;
     function SkipControlSymbols(var TextPointer: PChar): Boolean; virtual;
+    function GetDefaultCharInfo(var ASpaceWidth: Integer): PBitmapCharBlock;
   public
     function IsSameFornt(const AFont: TFontData): Boolean;
     property Height: Integer read FHeight;
@@ -425,7 +426,7 @@ procedure Translate(var x, y, z: GLfloat; dx, dy, dz: GLfloat);
 procedure Rotate(var x, y, z: GLfloat; ax, ay, az: GLfloat);
 procedure Normalize(var nx, ny, nz: GLFloat);   }
 
-function CreateOpenGL30Context(Handle: THandle; var GL: TGLContext): Integer;
+procedure CreateOpenGL30Context(Handle: THandle; var GL: TGLContext);
 procedure SetDCPixelFormat(DC : HDC; var PF: TPixelFormatDescriptor);
 function CreateShader(_Type: {$IFDEF OGL_USE_ENUMS}TShaderType{$ELSE}GLenum{$ENDIF}; Res: PAnsiChar): GLuint; overload; inline;
 function CreateShader(_Type: {$IFDEF OGL_USE_ENUMS}TShaderType{$ELSE}GLenum{$ENDIF}; Res: array of PAnsiChar): GLuint; overload;
@@ -652,43 +653,14 @@ begin
   glCompileShader(Result);
 end;
 
-function CreateOpenGL30Context(Handle: THandle; var GL: TGLContext): Integer;
-const attributes : array [0..6] of LongWord =
-        (
-          WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-          WGL_CONTEXT_MINOR_VERSION_ARB, 0,
-          WGL_CONTEXT_FLAGS_ARB,         WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
-          0
-        );
-var tempRC: HGLRC;
-    DC: HDC;
+procedure CreateOpenGL30Context(Handle: THandle; var GL: TGLContext);
+var DC: HDC;
 begin
   DC := GetDC(Handle);
 
   try
-    SetDCPixelFormat(DC, GL.PF);
-    tempRC := wglCreateContext(DC);
-    if tempRC = 0 then
-      RaiseLastOSError(GetLastError, 'Creating temporary render context fail.');
-    if not wglMakeCurrent(DC, tempRC) then
-      RaiseLastOSError(GetLastError, 'Selecting temporary render context fail.');
-
-    InitializeWGL_ARB_create_context;
-    if Addr(wglCreateContextAttribsARB) = nil then
-      raise ENotImplemented.Create('Load wglCreateContextAttribsARB fail.');
-
-    GL.GLRC:= wglCreateContextAttribsARB(DC, 0, @attributes);
-    if GL.GLRC = 0 then
-      RaiseLastOSError(GetLastError, 'Creating render context fail.');
-
-    if not wglMakeCurrent(DC, GL.GLRC) then begin
-      wglDeleteContext(GL.GLRC);
-      GL.GLRC:= 0;
-      RaiseLastOSError(GetLastError, 'Selecting render context fail.');
-    end;
-
+    GL.CreateOpenGLContext(DC, 3, 0, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB, 0);
   finally
-    wglDeleteContext(tempRC);
     ReleaseDC(Handle, DC);
   end;
 end;
@@ -1040,7 +1012,7 @@ begin
   Result:= True;
   if AText = '' then Exit;
   ActualizeState;
-  def:= GetCharInfo(DefaultChar);
+  def:= GetDefaultCharInfo(SpaceWidth);
   if def = nil then
     Exit(False);
   last:= Cardinal(-1);
@@ -1081,11 +1053,6 @@ begin
   P[3].Vector[1]:= - Height;
   I[0]:= 0; I[1]:= 1; I[2]:= 2;
   I[3]:= 0; I[4]:= 2; I[5]:= 3;
-  pb:= GetCharInfo(Ord(' '));
-  if pb <> nil then
-    SpaceWidth:= pb.Width[Ord(' ')]
-  else
-    SpaceWidth:= def.Width[Ord(DefaultChar) and $FF];
 
   for j:= 0 to C - 1 do begin
     while True do begin
@@ -1191,7 +1158,7 @@ begin
     xOfs:= AInfo.LinesAlignment[k].OffsetX;
     while True do begin
       case Ord(ps^) of
-        Ord(' '), 13, 10: ; //пробелы, возвраты каретки и переводы строк в конце линии обрезаются, т.к. уже учтены в выравнивании
+        Ord(' '), 13, 10: ; //пробелы, возвраты каретки и переводы строк в начале линии обрезаются, т.к. уже учтены в выравнивании
       else
         Break;
       end;
@@ -1227,10 +1194,7 @@ begin
       while True do begin
         case Ord(ps^) of
           Ord(' '): Inc(xOfs, AInfo.LinesAlignment[k].SpaceWidth);
-          {$IFNDEF USE10AS13}
-          10: xOfs:= 0;
-          {$ENDIF}
-          13 {$IFDEF USE10AS13}, 10{$ENDIF}: ; //по идее не должны попадаться, т.к. уже учтены при выравнивании
+          13, 10: ; //можно пропускать, т.к. уже учтены при выравнивании
         else
           Break;
         end;
@@ -1248,20 +1212,15 @@ end;
 function TBitmapFont.PrepareTextWordWrap(const AText: string; MaxWidth: Integer;
   Align: TTextAlign; out Prepared: TPreparedText): Boolean;
 var SpaceWidth: Integer;
-    pb, def: PBitmapCharBlock;
+    def: PBitmapCharBlock;
     info: TTextInfo;
 begin
   Result:= True;
   if AText = '' then Exit;
   ActualizeState;
-  def:= GetCharInfo(DefaultChar);
+  def:= GetDefaultCharInfo(SpaceWidth);
   if def = nil then
     Exit(False);
-  pb:= GetCharInfo(Ord(' '));
-  if pb <> nil then
-    SpaceWidth:= pb.Width[Ord(' ')]
-  else
-    SpaceWidth:= def.Width[Ord(DefaultChar) and $FF];
 
   Result:= GetTextInfo(AText, info, def.Width[Ord(DefaultChar) and $FF], SpaceWidth, MaxWidth, Align, True);
 
@@ -1686,6 +1645,20 @@ begin
   Result:= FCurrentCharData.CharTable[AChar shr 8];
 end;
 
+function TBitmapFontBase.GetDefaultCharInfo(var ASpaceWidth: Integer): PBitmapCharBlock;
+var
+  pb: PBitmapCharBlock;
+begin
+  Result:= GetCharInfo(DefaultChar);
+  if Result = nil then
+    Exit;
+  pb:= GetCharInfo(Ord(' '));
+  if pb <> nil then
+    ASpaceWidth:= pb.Width[Ord(' ')]
+  else
+    ASpaceWidth:= Result.Width[Ord(DefaultChar) and $FF];
+end;
+
 function TBitmapFontBase.GetTextInfo(const AText: string; out AInfo: TTextInfo;
   DefaultWidth, SpaceWidth, MaxWidth: Integer; AAlign: TTextAlign; Wrap: Boolean): Boolean;
 var xOfs, C, wordBeginOfs, wordBeginChar, spaceCount: Integer;
@@ -1698,36 +1671,28 @@ var xOfs, C, wordBeginOfs, wordBeginChar, spaceCount: Integer;
     spaceChainLength: Integer;
     firstSpaceOfs: Integer;
     lastIsSpace: Boolean;
-  procedure AddLineWrap(align: TTextAlign; Ofs, SpaceWidth, EndChar, SpaceCount: Integer);
+  procedure AddLineBreak(align: TTextAlign; LineBeginOfs, Ofs, SpaceWidth, EndChar: Integer; IsWrap: Boolean = False; SpaceCount: Integer = 0);
   begin
     if AInfo.MaxWidth < Ofs then
       AInfo.MaxWidth:= Ofs;
     LineIndicies.Add(EndChar);
     case align of
       taJustify:
-        if SpaceCount > 0 then
-          lines.Add(TLineInfo.Create(0, SpaceWidth + (MaxWidth - Ofs) div SpaceCount))
+        if IsWrap and (SpaceCount > 0) then
+          lines.Add(TLineInfo.Create(LineBeginOfs, SpaceWidth + (MaxWidth - Ofs) div SpaceCount))
         else
-          lines.Add(TLineInfo.Create(0, SpaceWidth));
-      taLeft: lines.Add(TLineInfo.Create(0, SpaceWidth));
-      taRight: lines.Add(TLineInfo.Create(MaxWidth - Ofs, SpaceWidth));
-      taCenterAlinment: lines.Add(TLineInfo.Create((MaxWidth - Ofs) div 2, SpaceWidth));
-    end;
-  end;
-  procedure AddLineBreak(align: TTextAlign; Ofs, SpaceWidth, EndChar, SpaceCount: Integer);
-  begin
-    if AInfo.MaxWidth < Ofs then
-      AInfo.MaxWidth:= Ofs;
-    LineIndicies.Add(EndChar);
-    case align of
-      taJustify, taLeft: lines.Add(TLineInfo.Create(0, SpaceWidth));
-      taRight: lines.Add(TLineInfo.Create(MaxWidth - Ofs, SpaceWidth));
+          lines.Add(TLineInfo.Create(LineBeginOfs, SpaceWidth));
+      taLeft: lines.Add(TLineInfo.Create(LineBeginOfs, SpaceWidth));
+      taRight: lines.Add(TLineInfo.Create(MaxWidth - Ofs + LineBeginOfs, SpaceWidth));
       taCenterAlinment: lines.Add(TLineInfo.Create((MaxWidth - Ofs) div 2, SpaceWidth));
     end;
   end;
 var
   last: Cardinal;
+  {$IFDEF USE10AS13}lastLineSimbol: Char;{$ENDIF}
   SkipControlSymbolsLoc: function (var TextPointer: PChar): Boolean of object;
+  lineStartSpaceOfs, lineStartSpaceCount: Integer;
+  isLineStart: Boolean;
 begin
   Result:= True;
   spaceChainLength:= 0;
@@ -1745,6 +1710,12 @@ begin
   last:= Ord(' ') shr 8;
 
   SkipControlSymbolsLoc:= SkipControlSymbols;
+  {$IFDEF USE10AS13}
+  lastLineSimbol:= #10;
+  {$ENDIF}
+  isLineStart:= True;
+  lineStartSpaceOfs:= 0;
+  lineStartSpaceCount:= 0;
 
   while ps^ <> #0 do begin
     Cur:= SurrogateToUCS4Char(ps);
@@ -1755,37 +1726,56 @@ begin
             firstSpaceOfs:= xOfs;
             lastIsSpace:= True;
           end;
-          //пропускаем пробелы в начале строки
-          if xOfs <> 0 then begin
-            Inc(spaceChainLength);
-            Inc(xOfs, SpaceWidth);
-            Inc(spaceCount);
-            wordBeginOfs:= xOfs;
-            wordBeginChar:= C;
+          if isLineStart then begin
+            Inc(lineStartSpaceOfs, SpaceWidth);
+            Inc(lineStartSpaceCount);
           end;
+          Inc(spaceChainLength);
+          Inc(xOfs, SpaceWidth);
+          Inc(spaceCount);
+          wordBeginOfs:= xOfs;
+          wordBeginChar:= C;
+          {$IFDEF USE10AS13}
+          lastLineSimbol:= #10;
+          {$ENDIF}
         end;
       {$IFNDEF USE10AS13}
       10: begin
-        {$IFDEF SKIP10}
+        {$IFNDEF SKIP10}
           xOfs:= 0;
           wordBeginOfs:= 0;
           lastIsSpace:= False;
+          isLineStart:= True;
+          lineStartSpaceOfs:= 0;
         {$ENDIF}
         end;
       {$ENDIF}
       13 {$IFDEF USE10AS13}, 10{$ENDIF}: begin
-          if lastIsSpace then
-            AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, C, spaceCount - spaceChainLength)
-          else
-            AddLineBreak(AAlign, xOfs, SpaceWidth, C, spaceCount - spaceChainLength);
-          spaceCount:= 0;
-          wordBeginOfs:= 0;
-          {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
+          {$IFDEF USE10AS13}
+          if lastLineSimbol = #10 then begin
+          {$ENDIF}
+            if lastIsSpace then
+              AddLineBreak(AAlign, lineStartSpaceOfs, firstSpaceOfs, SpaceWidth, C)
+            else
+              AddLineBreak(AAlign, lineStartSpaceOfs, xOfs, SpaceWidth, C);
+            spaceCount:= 0;
+            wordBeginOfs:= 0;
+            {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
+          {$IFDEF USE10AS13}
+          end;
+          lastLineSimbol:= Chr(Cur);
+          {$ENDIF}
+          lineStartSpaceOfs:= 0;
+          lineStartSpaceCount:= 0;
           lastIsSpace:= False;
+          isLineStart:= True;
         end;
     else
       if SkipControlSymbolsLoc(ps) then
         Continue;
+      {$IFDEF USE10AS13}
+      lastLineSimbol:= #10;
+      {$ENDIF}
       pb:= GetCharInfo(Cur);
       if pb <> nil then
         textWidth:= pb.Width[Cur and $FF]
@@ -1797,18 +1787,26 @@ begin
         Result:= False;
         textWidth:= DefaultWidth;
       end;
-      if (textWidth + xOfs >= MaxWidth) and Wrap then begin
+      Inc(xOfs, textWidth);
+      if Wrap and (xOfs >= MaxWidth) then begin
         if wordBeginOfs = 0 then begin
-          AddLineWrap(AAlign, xOfs, SpaceWidth, C, spaceCount - spaceChainLength);
-          xOfs:= 0;
+          //нужно слово разрезать на несколько строк, т.к. это слово с начала строки и не помещается
+          AddLineBreak(AAlign, 0, xOfs - textWidth, SpaceWidth, C, True);
+          xOfs:= textWidth;
         end else begin
-          AddLineWrap(AAlign, firstSpaceOfs, SpaceWidth, wordBeginChar, spaceCount - spaceChainLength);
+          //слово переносим на следующую строку, пробелы перед ним теперь конец строки
+          if isLineStart then
+            AddLineBreak(AAlign, lineStartSpaceOfs, firstSpaceOfs, SpaceWidth, wordBeginChar, True)
+          else
+            AddLineBreak(AAlign, lineStartSpaceOfs, firstSpaceOfs, SpaceWidth, wordBeginChar, True, spaceCount - spaceChainLength - lineStartSpaceCount);
           xOfs:= xOfs - wordBeginOfs;
           wordBeginOfs:= 0;
         end;
+        lineStartSpaceOfs:= 0;
+        lineStartSpaceCount:= 0;
       end;
+      isLineStart:= False;
       lastIsSpace:= False;
-      Inc(xOfs, textWidth);
       if IsFirstSurrogateChar(ps^) then
         Inc(ps);
       Inc(C);
@@ -1817,80 +1815,9 @@ begin
   end;
   // последний указывает на последний символ
   if lastIsSpace then
-    AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, C, spaceCount - spaceChainLength)
+    AddLineBreak(AAlign, lineStartSpaceOfs, firstSpaceOfs, SpaceWidth, C)
   else
-    AddLineBreak(AAlign, xOfs, SpaceWidth, C, spaceCount - spaceChainLength);
-
-  AInfo.SymbolsCount:= C;
-  LineIndicies.TrimExcess;
-  AInfo.LineEndSymbolIndex:= LineIndicies.List;
-  lines.TrimExcess;
-  AInfo.LinesAlignment:= lines.List;
-end;
-
-function TBitmapFontBase.GetTextInfo(const AText: string; out AInfo: TTextInfo;
-  DefaultWidth, SpaceWidth: Integer): Boolean;
-var xOfs, C: Integer;
-    ps: PChar;
-    textWidth: Integer;
-    pb: PBitmapCharBlock;
-    Cur: UCS4Char;
-    LineIndicies: TListRecord<Integer>;
-    lines: TListRecord<TLineInfo>;
-    last: Cardinal;
-  procedure AddLineBreak(Ofs, SpaceWidth, EndChar: Integer);
-  begin
-    if AInfo.MaxWidth < Ofs then
-      AInfo.MaxWidth:= Ofs;
-    LineIndicies.Add(EndChar);
-    lines.Add(TLineInfo.Create(0, SpaceWidth))
-  end;
-begin
-  Result:= True;
-  ps:= Pointer(AText);
-  C:= 0;
-  xOfs:= 0;
-  lines.Create(10);
-  LineIndicies.Create(10);
-  AInfo.MaxWidth:= 0;
-  last:= Ord(' ') shr 8;
-
-  while ps^ <> #0 do begin
-    Cur:= SurrogateToUCS4Char(ps);
-    case Cur of
-      Ord(' '): Inc(xOfs, SpaceWidth);
-      {$IFNDEF USE10AS13}
-      10: begin
-        {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
-      end;
-      {$ENDIF}
-      13 {$IFDEF USE10AS13}, 10{$ENDIF}: begin
-        AddLineBreak(xOfs, SpaceWidth, C);
-        {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
-      end;
-    else
-      if SkipControlSymbols(ps) then
-        Continue;
-      pb:= GetCharInfo(Cur);
-      if pb <> nil then
-        textWidth:= pb.Width[Cur and $FF]
-      else begin
-        if last <> Cur shr 8 then begin
-          last:= Cur shr 8;
-          AddNewLayer(last);
-        end;
-        Result:= False;
-        textWidth:= DefaultWidth;
-      end;
-      Inc(xOfs, textWidth);
-      if IsFirstSurrogateChar(ps^) then
-        Inc(ps);
-      Inc(C);
-    end;
-    Inc(ps);
-  end;
-  // последний указывает на последний символ
-  AddLineBreak(xOfs, SpaceWidth, C);
+    AddLineBreak(AAlign, lineStartSpaceOfs, xOfs, SpaceWidth, C);
 
   AInfo.SymbolsCount:= C;
   LineIndicies.TrimExcess;
@@ -1901,24 +1828,8 @@ end;
 
 function TBitmapFontBase.GetTextInfo(const AText: string;
   out AInfo: TTextInfo): Boolean;
-var SpaceWidth: Integer;
-    pb, def: PBitmapCharBlock;
 begin
-  Result:= True;
-  if AText = '' then Exit;
-  def:= GetCharInfo(DefaultChar);
-  if def = nil then
-    Exit(False);
-  pb:= GetCharInfo(Ord(' '));
-  if pb <> nil then
-    SpaceWidth:= pb.Width[Ord(' ')]
-  else begin
-    AddNewLayer(Ord(' ') shr 8);
-    SpaceWidth:= def.Width[Ord(DefaultChar) and $FF];
-    Result:= False;
-  end;
-
-  Result:= GetTextInfo(AText, AInfo, def.Width[Ord(DefaultChar) and $FF], SpaceWidth) and Result;
+  Result:= GetTextInfo(AText, AInfo, 0, taLeft, False);
 end;
 
 function TBitmapFontBase.GetTextInfoByIndex(const AText: string;
@@ -1934,14 +1845,14 @@ var xOfs, wordBeginOfs, wordBeginChar, spaceCount: Integer;
     spaceChainLength: Integer;
     firstSpaceOfs: Integer;
     lastIsSpace: Boolean;
-  procedure AddLineWrap(align: TTextAlign; Ofs, SpaceWidth, EndChar, SpaceCount: Integer);
+  procedure AddLineBreak(align: TTextAlign; Ofs, SpaceWidth, EndChar: Integer; IsWrap: Boolean = False; SpaceCount: Integer = 0);
   begin
     if AInfo.MaxWidth < Ofs then
       AInfo.MaxWidth:= Ofs;
     LineIndicies.Add(EndChar);
     case align of
       taJustify:
-        if SpaceCount > 0 then
+        if IsWrap and (SpaceCount > 0) then
           lines.Add(TLineInfo.Create(0, SpaceWidth + (MaxWidth - Ofs) div SpaceCount))
         else
           lines.Add(TLineInfo.Create(0, SpaceWidth));
@@ -1950,21 +1861,13 @@ var xOfs, wordBeginOfs, wordBeginChar, spaceCount: Integer;
       taCenterAlinment: lines.Add(TLineInfo.Create((MaxWidth - Ofs) div 2, SpaceWidth));
     end;
   end;
-  procedure AddLineBreak(align: TTextAlign; Ofs, SpaceWidth, EndChar, SpaceCount: Integer);
-  begin
-    if AInfo.MaxWidth < Ofs then
-      AInfo.MaxWidth:= Ofs;
-    LineIndicies.Add(EndChar);
-    case align of
-      taJustify, taLeft: lines.Add(TLineInfo.Create(0, SpaceWidth));
-      taRight: lines.Add(TLineInfo.Create(MaxWidth - Ofs, SpaceWidth));
-      taCenterAlinment: lines.Add(TLineInfo.Create((MaxWidth - Ofs) div 2, SpaceWidth));
-    end;
-  end;
 var
   last: Cardinal;
   textBegin: PChar;
+  {$IFDEF USE10AS13}lastLineSimbol: Char;{$ENDIF}
   SkipControlSymbolsLoc: function (var TextPointer: PChar): Boolean of object;
+  lineStartSpaceCount: Integer;
+  isLineStart: Boolean;
 begin
   Result:= True;
   spaceChainLength:= 0;
@@ -1982,6 +1885,11 @@ begin
   last:= Ord(' ') shr 8;
 
   SkipControlSymbolsLoc:= SkipControlSymbols;
+  {$IFDEF USE10AS13}
+  lastLineSimbol:= #10;
+  {$ENDIF}
+  isLineStart:= True;
+  lineStartSpaceCount:= 0;
 
   while ps^ <> #0 do begin
     Cur:= SurrogateToUCS4Char(ps);
@@ -1991,38 +1899,54 @@ begin
             spaceChainLength:= 0;
             firstSpaceOfs:= xOfs;
             lastIsSpace:= True;
-            wordBeginChar:= ps - textBegin;
           end;
-          //пропускаем пробелы в конце строки
-          if xOfs <> 0 then begin
-            Inc(spaceChainLength);
-            Inc(xOfs, SpaceWidth);
-            Inc(spaceCount);
-            wordBeginOfs:= xOfs;
+          if isLineStart then begin
+            Inc(lineStartSpaceCount);
           end;
+          Inc(spaceChainLength);
+          Inc(xOfs, SpaceWidth);
+          Inc(spaceCount);
+          wordBeginOfs:= xOfs;
+          wordBeginChar:= ps - textBegin;
+          {$IFDEF USE10AS13}
+          lastLineSimbol:= #10;
+          {$ENDIF}
         end;
       {$IFNDEF USE10AS13}
       10: begin
-        {$IFDEF SKIP10}
+        {$IFNDEF SKIP10}
           xOfs:= 0;
           wordBeginOfs:= 0;
           lastIsSpace:= False;
+          isLineStart:= True;
         {$ENDIF}
         end;
       {$ENDIF}
       13 {$IFDEF USE10AS13}, 10{$ENDIF}: begin
-          if lastIsSpace then
-            AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, ps - textBegin, spaceCount - spaceChainLength)
-          else
-            AddLineBreak(AAlign, xOfs, SpaceWidth, ps - textBegin, spaceCount - spaceChainLength);
-          spaceCount:= 0;
-          wordBeginOfs:= 0;
-          {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
+          {$IFDEF USE10AS13}
+          if lastLineSimbol = #10 then begin
+          {$ENDIF}
+            if lastIsSpace then
+              AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, ps - textBegin - 1)
+            else
+              AddLineBreak(AAlign, xOfs, SpaceWidth, ps - textBegin - 1);
+            spaceCount:= 0;
+            wordBeginOfs:= 0;
+            {$IFDEF SKIP10}xOfs:= 0;{$ENDIF}
+          {$IFDEF USE10AS13}
+          end;
+          lastLineSimbol:= Chr(Cur);
+          {$ENDIF}
+          lineStartSpaceCount:= 0;
           lastIsSpace:= False;
+          isLineStart:= True;
         end;
     else
       if SkipControlSymbolsLoc(ps) then
         Continue;
+      {$IFDEF USE10AS13}
+      lastLineSimbol:= #10;
+      {$ENDIF}
       pb:= GetCharInfo(Cur);
       if pb <> nil then
         textWidth:= pb.Width[Cur and $FF]
@@ -2034,18 +1958,25 @@ begin
         Result:= False;
         textWidth:= DefaultWidth;
       end;
-      if (textWidth + xOfs >= MaxWidth) and Wrap then begin
+      Inc(xOfs, textWidth);
+      if Wrap and (xOfs >= MaxWidth) then begin
         if wordBeginOfs = 0 then begin
-          AddLineWrap(AAlign, xOfs, SpaceWidth, ps - textBegin, spaceCount - spaceChainLength);
-          xOfs:= 0;
+          //нужно слово разрезать на несколько строк, т.к. это слово с начала строки и не помещается
+          AddLineBreak(AAlign, xOfs - textWidth, SpaceWidth, ps - textBegin - 1, True);
+          xOfs:= textWidth;
         end else begin
-          AddLineWrap(AAlign, firstSpaceOfs, SpaceWidth, wordBeginChar, spaceCount - spaceChainLength);
+          //слово переносим на следующую строку, пробелы перед ним теперь конец строки
+          if isLineStart then
+            AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, wordBeginChar, True)
+          else
+            AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, wordBeginChar, True, spaceCount - spaceChainLength - lineStartSpaceCount);
           xOfs:= xOfs - wordBeginOfs;
           wordBeginOfs:= 0;
         end;
+        lineStartSpaceCount:= 0;
       end;
+      isLineStart:= False;
       lastIsSpace:= False;
-      Inc(xOfs, textWidth);
       if IsFirstSurrogateChar(ps^) then
         Inc(ps);
     end;
@@ -2053,9 +1984,9 @@ begin
   end;
   // последний указывает на последний символ
   if lastIsSpace then
-    AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, ps - textBegin, spaceCount - spaceChainLength)
+    AddLineBreak(AAlign, firstSpaceOfs, SpaceWidth, ps - textBegin - 1)
   else
-    AddLineBreak(AAlign, xOfs, SpaceWidth, ps - textBegin, spaceCount - spaceChainLength);
+    AddLineBreak(AAlign, xOfs, SpaceWidth, ps - textBegin - 1);
 
   AInfo.SymbolsCount:= ps - textBegin;
   LineIndicies.TrimExcess;
@@ -2246,7 +2177,7 @@ begin
     SetLength(buf.TexData, FBMP.GetPixelsCount(YOfs));
     FBMP.GetGrayscalePixels(buf.TexData, YOfs);
     FShouldToggle:= True;
-    TThread.Queue(TThread.CurrentThread, ReadyToToggle);
+    ReadyToToggle;
   end else
     FRenderTask:= nil;
 end;
@@ -2431,7 +2362,7 @@ end;
 
 { TGLContext }
 
-function TGLContext.CreateOpenGLContext(DC: HDC; Throw: Boolean): Integer;
+procedure TGLContext.CreateOpenGLContext(DC: HDC; Throw: Boolean);
 begin
   wglMakeCurrent( 0, 0);
   //DC := GetDC(Handle);
@@ -2445,14 +2376,14 @@ begin
     RaiseLastOSError;
 end;
 
-function TGLContext.CreateOpenGLContext(DC: HDC; MajorVersion, MinorVersion,
-  Flags, ProfileMask: LongWord; Throw: Boolean): Integer;
+procedure TGLContext.CreateOpenGLContext(DC: HDC; MajorVersion, MinorVersion,
+  Flags, ProfileMask: LongWord; Throw: Boolean);
 var tempRC: HGLRC;
     attributes : array [0..9] of LongWord;
 begin
+  SetDCPixelFormat(DC, PF);
+  tempRC := wglCreateContext(DC);
   try
-    SetDCPixelFormat(DC, PF);
-    tempRC := wglCreateContext(DC);
     if tempRC = 0 then
       RaiseLastOSError(GetLastError, 'Creating temporary render context fail.');
     if not wglMakeCurrent(DC, tempRC) then
@@ -2479,9 +2410,9 @@ begin
     if not wglMakeCurrent(DC, GLRC) then begin
       wglDeleteContext(GLRC);
       GLRC:= 0;
-      RaiseLastOSError(GetLastError, 'Selecting render context fail.');
+      if Throw then
+        RaiseLastOSError(GetLastError, 'Selecting render context fail.');
     end;
-
   finally
     wglDeleteContext(tempRC);
   end;
