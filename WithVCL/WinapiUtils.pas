@@ -143,6 +143,7 @@ function TBitmapGDI.GetGrayscalePixels(const Pixels: TArray<Byte>; OffsetY: Inte
 var bmi: TBitmapInfo;
     Error, I, J, ofsy: Integer;
     buf: array of Byte;
+    hBmp : HBITMAP;
 begin
   if FBitmap.Height <= OffsetY then
     Exit(0);
@@ -162,7 +163,9 @@ begin
   Lock;
   try
   for I := OffsetY to bmi.bmiHeader.biHeight - 1 do begin
-    Error:= GetDIBits(FBitmap.Canvas.Handle, FBitmap.Handle, bmi.bmiHeader.biHeight - I - 1, 1, @buf[0], bmi, DIB_RGB_COLORS);
+    // Forces evaluation of Bitmap.Handle before Bitmap.Canvas.Handle
+    hBmp:= FBitmap.Handle;
+    Error:= GetDIBits(FBitmap.Canvas.Handle, hBmp, bmi.bmiHeader.biHeight - I - 1, 1, @buf[0], bmi, DIB_RGB_COLORS);
     if Error = 0 then
       RaiseLastOSError(GetLastError, ' TGrayBitmapGDI.GetPixels GetDIBits');
     ofsy:= (I - OffsetY) * bmi.bmiHeader.biWidth;
