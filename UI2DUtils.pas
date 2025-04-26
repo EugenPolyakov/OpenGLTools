@@ -93,6 +93,9 @@ const
 procedure DrawBilboard(const R: TRect; var ObjectInfo: TBilboard); overload;
 procedure DrawBilboard(const R: TRect; var ObjectInfo: TBilboard; const TextureParams: array of TTexturesParameters); overload;
 procedure DrawBilboard(const R: TRect; const TextureParams: array of TTexturesParameters); overload;
+procedure DrawBilboard(const R: TRectF; var ObjectInfo: TBilboard); overload;
+procedure DrawBilboard(const R: TRectF; var ObjectInfo: TBilboard; const TextureParams: array of TTexturesParameters); overload;
+procedure DrawBilboard(const R: TRectF; const TextureParams: array of TTexturesParameters); overload;
 
 function ProgramGenerator: TProgramGenerator;
 
@@ -139,6 +142,46 @@ begin
 end;
 
 procedure DrawBilboard(const R: TRect; var ObjectInfo: TBilboard);
+var tp: TTexturesParameters;
+begin
+  if ObjectInfo.Textures._Textures[0].Texture.Target <> {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D then
+    tp:= TTexturesParameters.Create(AttributeTextureCoord, 0, 0, R.Width, R.Height)
+  else
+    tp:= TTexturesParameters.Create(AttributeTextureCoord);
+  DrawBilboard(R, ObjectInfo, [tp]);
+end;
+
+procedure DrawBilboard(const R: TRectF; const TextureParams: array of TTexturesParameters);
+var i: Integer;
+begin
+  glBegin({$IFDEF OGL_USE_ENUMS}TPrimitiveType.{$ENDIF}GL_TRIANGLE_STRIP);
+  for i := 0 to High(TextureParams) do with TextureParams[i] do
+    glVertexAttrib2f(AttributeIndex, Left, Top);
+  glVertexAttrib2f(AttributeVertex, R.Left, R.Top);
+
+  for i := 0 to High(TextureParams) do with TextureParams[i] do
+    glVertexAttrib2f(AttributeIndex, Left, Bottom);
+  glVertexAttrib2f(AttributeVertex, R.Left, R.Bottom);
+
+  for i := 0 to High(TextureParams) do with TextureParams[i] do
+    glVertexAttrib2f(AttributeIndex, Right, Top);
+  glVertexAttrib2f(AttributeVertex, R.Right, R.Top);
+
+  for i := 0 to High(TextureParams) do with TextureParams[i] do
+    glVertexAttrib2f(AttributeIndex, Right, Bottom);
+  glVertexAttrib2f(AttributeVertex, R.Right, R.Bottom);
+  glEnd;
+end;
+
+procedure DrawBilboard(const R: TRectF; var ObjectInfo: TBilboard; const TextureParams: array of TTexturesParameters);
+begin
+  GetViewPortSize(ObjectInfo.ShaderBlock._FloatUniforms[0].Value);
+  ObjectInfo.ShaderBlock.PrepareToDraw;
+  ObjectInfo.Textures.Activate;
+  DrawBilboard(R, TextureParams);
+end;
+
+procedure DrawBilboard(const R: TRectF; var ObjectInfo: TBilboard);
 var tp: TTexturesParameters;
 begin
   if ObjectInfo.Textures._Textures[0].Texture.Target <> {$IFDEF OGL_USE_ENUMS}TTextureTarget.{$ENDIF}GL_TEXTURE_2D then
